@@ -8,5 +8,5 @@
 import unittest
 
 import httpnim
-test "placeholder test":
-  check add(5, 5) == 10
+test "httpnim initialization":
+  check init() == 0
