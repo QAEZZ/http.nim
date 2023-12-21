@@ -9,7 +9,16 @@ type Config = object
   mappings: seq[array[2, string]]
   disallow: seq[string]
 
-proc getConfig(): void =  # TODO: return type Config
+
+proc main(config: Config) : void =
+  echo "\nVerifying integrity of mappings..."
+  # TODO: verify that the file mappings in config actually exist,
+  #       also view if there are duplicate routes, if there are
+  #       notify the user as a warning and use the last defined
+  #       instance of it.
+
+
+proc getConfig(): Config =  # TODO: return type Config
   echo "Getting config..."
 
   var config: Config
@@ -30,6 +39,12 @@ proc getConfig(): void =  # TODO: return type Config
   load(s, config)
   defer: s.close()
   
+  return config
+
+
+when isMainModule:
+  let config: Config = getConfig()
+
   echo "Using config settings:"
   echo " - port: ", config.port
   echo " - wwwroot: ", config.wwwroot_path
@@ -38,6 +53,4 @@ proc getConfig(): void =  # TODO: return type Config
   echo " - disallow: "
   for disallow in config.disallow: echo "    * ", disallow
 
-
-when isMainModule:
-  getConfig()
+  main(config)
