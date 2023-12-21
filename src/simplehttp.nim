@@ -1,8 +1,8 @@
 import yaml
 import streams
-import yaml/hints
 import os
 import strformat
+import tables
 
 type Config = object
   port : int
@@ -10,16 +10,47 @@ type Config = object
   mappings : seq[array[2, string]]
   disallow : seq[string]
 
+proc findDuplicates(seq: seq[string]): seq[string] =
+  var seen: Table[string, int]
+  var duplicates: seq[string]
+
+  for element in seq:
+    if element in seen:
+      duplicates.add(element)
+    else:
+      seen[element] = 1
+
+  duplicates
 
 proc main(config: Config) : void =
   echo "\nVerifying integrity of mappings..."
-  # TODO: verify that the file mappings in config actually exist,
-  #       also view if there are duplicate routes, if there are
-  #       notify the user as a warning and use the last defined
-  #       instance of it.
+
+  var
+    pointless_mappings: seq[array[2, string]]
+    routes: seq[string]
+
+  for mapping in config.mappings:
+    if not fileExists(fmt"{config.wwwroot_path}/{mapping[1]}"): pointless_mappings.add(mapping)
+    
+  if pointless_mappings.len > 0:
+    echo "\n\e[0;31mWarn:\e[033;0m Found pointless mapping(s): "
+    for mapping in pointless_mappings: echo " - ", mapping
+    echo fmt"These mappings exist in the config, but the files don't exist in {config.wwwroot_path}."
+  
+  for mapping in config.mappings: routes.add(mapping[0])
+
+  var duplicate_routes: seq[string] = findDuplicates(routes)
+
+  if duplicate_routes.len > 0:
+    echo "\n\e[0;31mWarn:\e[033;0m Found duplicate route(s): "
+    for route in duplicate_routes: echo " - ", route
+  
+
+  echo "\nStarting webserver..." 
 
 
-proc getConfig(): Config =  # TODO: return type Config
+
+proc getConfig(): Config = 
   echo "Getting config..."
 
   var config: Config
@@ -72,7 +103,7 @@ when isMainModule:
 
     const css_boilerplate: string = "* {\nmargin: 0;\npadding: 0;\nbox-sizing: border-box;\noverflow-x: hidden;\n}"
 
-    echo "\n\e[0;31mWarn:\e[033;0m Couldn't find '", config.wwwroot_path, "' making one instead."
+    echo "\n\e[0;31mWarn:\e[033;0m Couldn't find '", config.wwwroot_path, "'; making one instead."
 
     createDir(config.wwwroot_path)
     createDir(fmt"{config.wwwroot_path}/css")
