@@ -1,5 +1,5 @@
 import yaml
-import std/[net, strformat, tables, os, streams, strutils]
+import std/[net, strformat, tables, os, streams, strutils, sequtils]
 
 type Config = object
   port : int
@@ -19,19 +19,97 @@ proc findDuplicates(seq: seq[string]): seq[string] =
 
   duplicates
 
+proc getMimeType(extension: string) : string =
+  case extension:
+  of "html","htm":
+    return "text/html"
+  of "json", "jsonc":
+    return "application/json"
+  of "wasm":
+    return "application/wasm"
+  of "pdf":
+    return "application/pdf"
+  of "wav":
+    return "audio/s-wav"
+  of "mp3":
+    return "audio/mpeg"
+  of "mp4":
+    return "video/mp4"
+  of "png":
+    return "image/x-video"
+  of "jpg","jpeg","jpe","jfif","pjpeg","pjp":
+    return "image/jpeg"
+  of "bmp":
+    return "image/x-MS-bmp"
+  of "gif":
+    return "image/gif"
+  of "tif","tiff":
+    return "image/tiff"
+  of "tar":
+    return "x-tar"
+  of "zip":
+    return "x-zip-compressed"
+  of "gz":
+    return "x-gzip"
+  of "exe":
+    return "x-msdownload"
+  of "js":
+    return "text/javascript"
+  of "css":
+    return "text/css"
+  else:
+    return "text/plain"
+
 proc handleClient(client: Socket, config: Config) : void = 
   # TODO: actually look at config.mappings and see the routes/file paths.
   #       also return their respective MIME types.
   #
   # EXAMPLE: GET / HTTP/1.1 
   var dataBuffer = r""
-
-  let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
   client.readLine(dataBuffer, timeout = -1, flags = {SafeDisconn})
-
-  # TODO: clean this up future me, I have to go
   let request = databuffer.split(" ")
-  echo fmt"{request[0]} request for path {request[1]} using {request[2]}"
+
+  var 
+    mimeType: string
+    filePath: string = "MISSING"
+    statusCode: string
+    response: string
+
+  let requestedFile = request[1]
+  for mapping in config.mappings:
+    if mapping[0] == requestedFile:
+      filePath = fmt"{config.wwwRootPath}/{mapping[1]}"
+      statusCode = "200 OK"
+      mimeType = getMimeType(mapping[1].split(".")[^1])
+  
+  if filePath == "MISSING":
+    echo "Couldn't find route in mappings, looking in directory: " & config.wwwRootPath & "/*"
+    let files = block:
+      var res: seq[string]
+      for f in walkFiles(fmt"{config.wwwRootPath}/*"): res.add(f)
+      # TODO: Fix this whole proc, also make this look through dirs ^
+      res
+
+    echo files
+
+    for file in files:
+      var file = file.replace(config.wwwRootPath, "")
+      # echo file
+      if file == requestedFile:
+        echo "\nFound: " & file & "\nReq'd: " & requestedFile & "\n"
+        filePath = fmt"{config.wwwRootPath}/{requestedFile}"
+        statusCode = "200 OK"
+        mimeType = getMimeType(requestedFile.split(".")[^1])
+  
+  if filePath == "MISSING":
+    statusCode = "404 Not Found" 
+    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: text/plain\r\n\r\n" & "404, Not Found"
+  else:
+    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: " & mimeType & "\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
+
+  echo fmt"{statusCode} for {request[0]} {request[1]}"
+  # echo fmt"{request[0]} request for path {request[1]} using {request[2]}"
+  
   client.send(response)
   client.close()
 
