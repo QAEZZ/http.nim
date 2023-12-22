@@ -1,11 +1,5 @@
 import yaml
-import streams
-import os
-import strformat
-import tables
-import std/net
-import strutils
-import selectors
+import std/[net, strformat, tables, os, streams, strutils]
 
 type Config = object
   port : int
@@ -28,10 +22,16 @@ proc findDuplicates(seq: seq[string]): seq[string] =
 proc handleClient(client: Socket, config: Config) : void = 
   # TODO: actually look at config.mappings and see the routes/file paths.
   #       also return their respective MIME types.
+  #
+  # EXAMPLE: GET / HTTP/1.1 
   var dataBuffer = r""
-  let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html" & "\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
+
+  let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
   client.readLine(dataBuffer, timeout = -1, flags = {SafeDisconn})
-  echo "Request: ", dataBuffer
+
+  # TODO: clean this up future me, I have to go
+  let request = databuffer.split(" ")
+  echo fmt"{request[0]} request for path {request[1]} using {request[2]}"
   client.send(response)
   client.close()
 
@@ -59,7 +59,7 @@ proc main(config: Config) : void =
     for route in duplicate_routes: echo " - ", route
   
 
-  echo "\nStarting webserver..."
+  echo "\nStarting webserver...\n"
 
   let s = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
   s.bindAddr(Port(config.port))
