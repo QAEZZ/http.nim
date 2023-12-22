@@ -3,10 +3,13 @@ import streams
 import os
 import strformat
 import tables
+import std/net
+import strutils
+import selectors
 
 type Config = object
   port : int
-  wwwroot_path : string
+  wwwRootPath : string
   mappings : seq[array[2, string]]
   disallow : seq[string]
 
@@ -22,6 +25,16 @@ proc findDuplicates(seq: seq[string]): seq[string] =
 
   duplicates
 
+proc handleClient(client: Socket, config: Config) : void = 
+  # TODO: actually look at config.mappings and see the routes/file paths.
+  #       also return their respective MIME types.
+  var dataBuffer = r""
+  let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html" & "\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
+  client.readLine(dataBuffer, timeout = -1, flags = {SafeDisconn})
+  echo "Request: ", dataBuffer
+  client.send(response)
+  client.close()
+
 proc main(config: Config) : void =
   echo "\nVerifying integrity of mappings..."
 
@@ -30,12 +43,12 @@ proc main(config: Config) : void =
     routes: seq[string]
 
   for mapping in config.mappings:
-    if not fileExists(fmt"{config.wwwroot_path}/{mapping[1]}"): pointless_mappings.add(mapping)
+    if not fileExists(fmt"{config.wwwRootPath}/{mapping[1]}"): pointless_mappings.add(mapping)
     
   if pointless_mappings.len > 0:
     echo "\n\e[0;31mWarn:\e[033;0m Found pointless mapping(s): "
     for mapping in pointless_mappings: echo " - ", mapping
-    echo fmt"These mappings exist in the config, but the files don't exist in {config.wwwroot_path}."
+    echo fmt"These mappings exist in the config, but the files don't exist in {config.wwwRootPath}."
   
   for mapping in config.mappings: routes.add(mapping[0])
 
@@ -46,7 +59,24 @@ proc main(config: Config) : void =
     for route in duplicate_routes: echo " - ", route
   
 
-  echo "\nStarting webserver..." 
+  echo "\nStarting webserver..."
+
+  let s = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+  s.bindAddr(Port(config.port))
+  s.listen()
+
+  while true:
+    var client: Socket = Socket()
+    accept(s, client)
+    handleClient(client, config)
+
+  # var client: Socket
+  # var address = ""
+  # while true:
+  #   s.acceptAddr(client, address)
+  #   echo "Client connection.\nAddress: ", address
+  #   client.recv(s, 1024, timeout = -1, flags = {SafeDisconn})
+
 
 
 
@@ -59,7 +89,7 @@ proc getConfig(): Config =
     echo "Config file not found.\nCreating one..."
 
     config.port = 80
-    config.wwwroot_path = "./wwwroot"
+    config.wwwRootPath = "./wwwroot"
     config.mappings = @[["/", "index.html"], ["/index", "index.html"], ["/home", "index.html"]]
     config.disallow = @["not_allowed_to_view.txt", "test.txt", "secrets.txt"]
 
@@ -79,15 +109,15 @@ when isMainModule:
 
   echo "Using config settings:"
   echo " - port: ", config.port
-  echo " - wwwroot: ", config.wwwroot_path
+  echo " - wwwroot: ", config.wwwRootPath
   echo " - mappings: "
   for mapping in config.mappings: echo "    * ", mapping
   echo " - disallow: "
   for disallow in config.disallow: echo "    * ", disallow
 
-  if not dirExists(config.wwwroot_path):
+  if not dirExists(config.wwwRootPath):
 
-    const html_boilerplate: string = """<!DOCTYPE html>
+    const htmlBoilerplate: string = """<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8">
@@ -97,21 +127,22 @@ when isMainModule:
     <link rel="stylesheet" href="css/index.css">
   </head>
   <body>
+  <h1 style="position:absolute;left:50%;top:50%;transform:translate(-50%, -50%);">Hello, from Nim!</h1>
 	<script src="js/index.js"></script>
   </body>
 </html>"""
 
-    const css_boilerplate: string = "* {\nmargin: 0;\npadding: 0;\nbox-sizing: border-box;\noverflow-x: hidden;\n}"
+    const cssBoilerplate: string = "* {\nmargin: 0;\npadding: 0;\nbox-sizing: border-box;\noverflow-x: hidden;\n}\nbody { background-color: #202020; color: white; }"
 
-    echo "\n\e[0;31mWarn:\e[033;0m Couldn't find '", config.wwwroot_path, "'; making one instead."
+    echo "\n\e[0;31mWarn:\e[033;0m Couldn't find '", config.wwwRootPath, "'; making one instead."
 
-    createDir(config.wwwroot_path)
-    createDir(fmt"{config.wwwroot_path}/css")
-    createDir(fmt"{config.wwwroot_path}/js")
-    createDir(fmt"{config.wwwroot_path}/assets")
-    writeFile(fmt"{config.wwwroot_path}/robots.txt", "User-agent: *\nDisallow: /")
-    writeFile(fmt"{config.wwwroot_path}/index.html", html_boilerplate)
-    writeFile(fmt"{config.wwwroot_path}/css/index.css", css_boilerplate)
-    writeFile(fmt"{config.wwwroot_path}/js/index.js", "console.log('Hello, World!');")
+    createDir(config.wwwRootPath)
+    createDir(fmt"{config.wwwRootPath}/css")
+    createDir(fmt"{config.wwwRootPath}/js")
+    createDir(fmt"{config.wwwRootPath}/assets")
+    writeFile(fmt"{config.wwwRootPath}/robots.txt", "User-agent: *\nDisallow: /")
+    writeFile(fmt"{config.wwwRootPath}/index.html", html_boilerplate)
+    writeFile(fmt"{config.wwwRootPath}/css/index.css", css_boilerplate)
+    writeFile(fmt"{config.wwwRootPath}/js/index.js", "console.log('Hello, World!');")
 
   main(config)
