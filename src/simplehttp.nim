@@ -6,6 +6,7 @@ type Config = object
   wwwRootPath : string
   mappings : seq[array[2, string]]
   disallow : seq[string]
+  disallowReturn404 : bool
 
 proc findDuplicates(seq: seq[string]): seq[string] =
   var seen: Table[string, int]
@@ -61,10 +62,6 @@ proc getMimeType(extension: string) : string =
     return "text/plain"
 
 proc handleClient(client: Socket, config: Config) : void = 
-  # TODO: actually look at config.mappings and see the routes/file paths.
-  #       also return their respective MIME types.
-  #
-  # EXAMPLE: GET / HTTP/1.1 
   var dataBuffer = r""
   client.readLine(dataBuffer, timeout = -1, flags = {SafeDisconn})
   let request = databuffer.split(" ")
@@ -74,41 +71,41 @@ proc handleClient(client: Socket, config: Config) : void =
     filePath: string = "MISSING"
     statusCode: string
     response: string
+    isError: bool = false
 
   let requestedFile = request[1]
+
   for mapping in config.mappings:
     if mapping[0] == requestedFile:
       filePath = fmt"{config.wwwRootPath}/{mapping[1]}"
       statusCode = "200 OK"
       mimeType = getMimeType(mapping[1].split(".")[^1])
   
+  for notAllowed in config.disallow:
+    if notAllowed == requestedFile:
+      statusCode = "403 Forbidden"
+      if config.disallowReturn404:
+        statusCode = "404 Not Found"
+      mimeType = "text/plain"
+      isError = true
+      filePath = "NONE"
+  
   if filePath == "MISSING":
-    echo "Couldn't find route in mappings, looking in directory: " & config.wwwRootPath & "/*"
-    let files = block:
-      var res: seq[string]
-      for f in walkFiles(fmt"{config.wwwRootPath}/*"): res.add(f)
-      # TODO: Fix this whole proc, also make this look through dirs ^
-      res
-
-    echo files
-
-    for file in files:
-      var file = file.replace(config.wwwRootPath, "")
-      # echo file
-      if file == requestedFile:
-        echo "\nFound: " & file & "\nReq'd: " & requestedFile & "\n"
-        filePath = fmt"{config.wwwRootPath}/{requestedFile}"
-        statusCode = "200 OK"
-        mimeType = getMimeType(requestedFile.split(".")[^1])
+    if fileExists(fmt"{config.wwwRootPath}{requestedFile}"):
+      filePath = fmt"{config.wwwRootPath}{requestedFile}"
+      statusCode = "200 OK"
+      mimeType = getMimeType(requestedFile.split(".")[^1])
   
   if filePath == "MISSING":
     statusCode = "404 Not Found" 
-    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: text/plain\r\n\r\n" & "404, Not Found"
-  else:
-    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: " & mimeType & "\r\n\r\n" & readFile(fmt"{config.wwwRootPath}/index.html")
+    isError = true
 
-  echo fmt"{statusCode} for {request[0]} {request[1]}"
-  # echo fmt"{request[0]} request for path {request[1]} using {request[2]}"
+  if isError:
+    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: " & mimeType & "\r\n\r\n" & statusCode
+  else:
+    response = "HTTP/1.1 " & statusCode & "\r\nContent-Type: " & mimeType & "\r\n\r\n" & readFile(filePath)
+
+  echo fmt"{request[0]} {request[1]}, {statusCode}"
   
   client.send(response)
   client.close()
@@ -148,15 +145,6 @@ proc main(config: Config) : void =
     accept(s, client)
     handleClient(client, config)
 
-  # var client: Socket
-  # var address = ""
-  # while true:
-  #   s.acceptAddr(client, address)
-  #   echo "Client connection.\nAddress: ", address
-  #   client.recv(s, 1024, timeout = -1, flags = {SafeDisconn})
-
-
-
 
 proc getConfig(): Config = 
   echo "Getting config..."
@@ -170,6 +158,7 @@ proc getConfig(): Config =
     config.wwwRootPath = "./wwwroot"
     config.mappings = @[["/", "index.html"], ["/index", "index.html"], ["/home", "index.html"]]
     config.disallow = @["not_allowed_to_view.txt", "test.txt", "secrets.txt"]
+    config.disallowReturn404 = false
 
     var s = newFileStream("./config.yaml", fmWrite)
     Dumper().dump(config, s)
